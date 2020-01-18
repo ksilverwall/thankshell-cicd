@@ -1,0 +1,156 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: SAM Template for thankshell
+
+Parameters:
+  GitHubToken:
+    Type: String
+    Description: GitHub Token
+  DeployBucket:
+    Type: String
+    Description: deploy target
+  Distribution:
+    Type: String
+    Description: cloud-front distribution
+
+Resources:
+  #
+  # Code Build
+  #
+  BuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+         - Sid: "cfnSample"
+           Effect: "Allow"
+           Principal:
+             Service:
+               - "codebuild.amazonaws.com"
+           Action:
+            - "sts:AssumeRole"
+      Policies:
+        - PolicyName: "root"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action: "*"
+                Resource: "*"
+
+  CodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Ref AWS::StackName
+      ServiceRole: !Ref BuildRole
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Type: LINUX_CONTAINER
+        Image: aws/codebuild/standard:3.0
+      Artifacts:
+        Type: CODEPIPELINE
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: !Sub |
+          version: 0.2
+          phases:
+            install:
+              runtime-versions:
+                nodejs: 12
+            pre_build:
+              commands:
+                - npm install
+            build:
+              commands:
+                - npm run build
+            post_build:
+              commands:
+                - aws s3 cp --recursive --acl public-read ./build s3://${DeployBucket}/
+                # clear browser caching
+                - >
+                  aws s3 cp --acl public-read
+                  --cache-control="max-age=0, no-cache, no-store, must-revalidate"
+                  ./build/service-worker.js s3://${DeployBucket}/
+                - >
+                  aws s3 cp --acl public-read
+                  --cache-control="max-age=0, no-cache, no-store, must-revalidate"
+                  ./build/index.html s3://${DeployBucket}/
+                # clear cloudfront caching
+                - >
+                  aws cloudfront create-invalidation --distribution-id ${Distribution}
+                  --paths /index.html /service-worker.js
+          artifacts:
+            files:
+              - '**/*'
+            base-directory: build
+
+  #
+  # Code Pipeline
+  #
+  PipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+         - Sid: "cfnSample"
+           Effect: "Allow"
+           Principal:
+             Service:
+               - "codepipeline.amazonaws.com"
+           Action:
+            - "sts:AssumeRole"
+      Policies:
+        - PolicyName: "root"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action: "*"
+                Resource: "*"
+
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+
+  FrontendPipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      RoleArn: !GetAtt PipelineRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location:
+          Ref: ArtifactBucket
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: SourceAction
+              ActionTypeId:
+                Category: Source
+                Owner: ThirdParty
+                Version: 1
+                Provider: GitHub
+              OutputArtifacts:
+                - Name: AppSource
+              Configuration:
+                Owner: ksilverwall
+                Repo: thankshell-react
+                Branch: master
+                OAuthToken: !Ref GitHubToken
+                PollForSourceChanges: false
+              RunOrder: 1
+        - Name: Build
+          Actions:
+            - Name: Build
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: 1
+                Provider: CodeBuild
+              Configuration:
+                ProjectName: !Ref CodeBuildProject
+              RunOrder: 1
+              InputArtifacts:
+                - Name: AppSource
+              OutputArtifacts:
+                - Name: AppPackage
