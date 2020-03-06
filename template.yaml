@@ -158,3 +158,18 @@ Resources:
                 - Name: AppSource
               OutputArtifacts:
                 - Name: AppPackage
+
+  FrontendWebhook:
+    Type: AWS::CodePipeline::Webhook
+    Properties:
+      Authentication: GITHUB_HMAC
+      AuthenticationConfiguration:
+        # SecretToken: secret
+        SecretToken: !Ref GitHubToken
+      Filters:
+      - JsonPath: "$.ref"
+        MatchEquals: refs/heads/master
+      TargetAction: SourceAction
+      TargetPipeline: !Ref FrontendPipeline
+      TargetPipelineVersion: !GetAtt FrontendPipeline.Version
+      RegisterWithThirdParty: 'true'
