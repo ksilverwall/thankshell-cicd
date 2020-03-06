@@ -12,6 +12,10 @@ Parameters:
   Distribution:
     Type: String
     Description: cloud-front distribution
+  Environment:
+    Type: String
+    Description: deploy target
+    Default: staging
 
 Resources:
   #
@@ -60,10 +64,10 @@ Resources:
                 nodejs: 12
             pre_build:
               commands:
-                - npm install
+                - npm ci
             build:
               commands:
-                - npm run build
+                - npm run-script build:${Environment}
             post_build:
               commands:
                 - aws s3 cp --recursive --acl public-read ./build s3://${DeployBucket}/

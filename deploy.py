@@ -22,20 +22,15 @@ def deploy(env, secrets):
     config = ENV_PARAMS[env] 
 
     subprocess.run([
-        'sam', 'package',
-        '--output-template-file', 'packaged.yaml',
-        '--s3-bucket', BUCKET_NAME,
-    ])
-
-    subprocess.run([
         'sam', 'deploy',
-        '--template-file', 'packaged.yaml',
+        '--template-file', 'template.yaml',
         '--stack-name', config['StackName'],
         '--capabilities', 'CAPABILITY_IAM',
         '--parameter-overrides',
         'GitHubToken={}'.format(secrets['GithubToken']),
         'DeployBucket={}'.format(config['DeployBucket']),
         'Distribution={}'.format(config['Distribution']),
+        'Environment={}'.format(env),
     ])
 
 if __name__ == '__main__':
