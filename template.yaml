@@ -67,7 +67,8 @@ Resources:
                 - npm ci
             build:
               commands:
-                - npm run-script build:${Environment}
+                - npm run build:${Environment}
+                - npm run create-version-file
             post_build:
               commands:
                 - aws s3 cp --recursive --acl public-read ./build s3://${DeployBucket}/
